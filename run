@@ -1,0 +1,90 @@
+#!/bin/bash
+# run — facade for build, test, lint, check, and deploy. No business logic here.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+case "${1:-help}" in
+  build)
+    echo "=== Building ==="
+    go build ./...
+    echo "Build OK"
+    ;;
+
+  test)
+    shift || true
+    if [ $# -gt 0 ]; then
+      echo "=== Testing $* ==="
+      go test -v "$@" 2>&1 | tee output/testing/last.log
+    else
+      echo "=== Testing all ==="
+      go test -v ./... 2>&1 | tee output/testing/last.log
+    fi
+    ;;
+
+  lint)
+    echo "=== Linting ==="
+    gofmt -l . | (grep . && echo "gofmt: files need formatting" && exit 1 || true)
+    go vet ./...
+    if command -v golangci-lint &>/dev/null; then
+      golangci-lint run ./...
+    fi
+    echo "Lint OK"
+    ;;
+
+  check)
+    echo "=== Full quality gate ==="
+    "$0" build
+    "$0" lint
+    "$0" test
+    echo "=== All checks passed ==="
+    ;;
+
+  deploy)
+    echo "=== Deploy ==="
+    # 1. Quality gates
+    "$0" check
+
+    # 2. Read and increment version
+    VERSION=$(cat VERSION)
+    NEW_VERSION=$((VERSION + 1))
+    echo "$NEW_VERSION" > VERSION
+    echo "Version: $VERSION -> $NEW_VERSION"
+
+    # 3. Publish to GitHub (banner, README, commit, push)
+    ~/bin/publish .
+
+    # 4. Tag and push
+    TAG="v0.0.$NEW_VERSION"
+    echo "Tagging $TAG"
+    git tag "$TAG"
+    git push origin "$TAG"
+
+    # 5. Trigger Go module proxy
+    echo "Triggering Go module proxy..."
+    GOPROXY=proxy.golang.org go list -m "github.com/darrenoakey/daz-golang-gio@$TAG" || true
+
+    echo ""
+    echo "=== Deployed $TAG ==="
+    echo "  go get github.com/darrenoakey/daz-golang-gio@$TAG"
+    echo "  https://pkg.go.dev/github.com/darrenoakey/daz-golang-gio@$TAG"
+    ;;
+
+  example)
+    echo "=== Running example ==="
+    go run ./example/
+    ;;
+
+  help|*)
+    echo "Usage: ./run <command>"
+    echo ""
+    echo "Commands:"
+    echo "  build    Build the library"
+    echo "  test     Run tests (optionally: ./run test ./persist/...)"
+    echo "  lint     Run formatters and linters"
+    echo "  check    Full quality gate (build + lint + test)"
+    echo "  deploy   Publish, tag, and release a new version"
+    echo "  example  Run the example app"
+    ;;
+esac
