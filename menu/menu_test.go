@@ -20,15 +20,17 @@ func TestContextMenu_ShowMakesVisible(t *testing.T) {
 	if m.Visible() {
 		t.Fatal("new menu should not be visible")
 	}
-	m.Show(image.Pt(100, 200), testItems)
+	m.cursorPos = image.Pt(100, 200)
+	m.Show(testItems)
 	if !m.Visible() {
 		t.Error("menu should be visible after Show")
 	}
 }
 
-func TestContextMenu_ShowSetsPosition(t *testing.T) {
+func TestContextMenu_ShowUsesCursorPos(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(100, 200), testItems)
+	m.cursorPos = image.Pt(100, 200)
+	m.Show(testItems)
 	if m.pos != (image.Point{X: 100, Y: 200}) {
 		t.Errorf("pos = %v, want (100,200)", m.pos)
 	}
@@ -36,7 +38,7 @@ func TestContextMenu_ShowSetsPosition(t *testing.T) {
 
 func TestContextMenu_ShowStoresItems(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(0, 0), testItems)
+	m.Show(testItems)
 	if len(m.items) != len(testItems) {
 		t.Fatalf("items count = %d, want %d", len(m.items), len(testItems))
 	}
@@ -50,7 +52,7 @@ func TestContextMenu_ShowStoresItems(t *testing.T) {
 func TestContextMenu_ShowResetsHover(t *testing.T) {
 	var m ContextMenu
 	m.hoverIdx = 2
-	m.Show(image.Pt(0, 0), testItems)
+	m.Show(testItems)
 	if m.hoverIdx != -1 {
 		t.Errorf("hoverIdx = %d, want -1 after Show", m.hoverIdx)
 	}
@@ -58,7 +60,7 @@ func TestContextMenu_ShowResetsHover(t *testing.T) {
 
 func TestContextMenu_ShowSetsShowFrame(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(0, 0), testItems)
+	m.Show(testItems)
 	if !m.showFrame {
 		t.Error("showFrame should be true after Show")
 	}
@@ -66,7 +68,8 @@ func TestContextMenu_ShowSetsShowFrame(t *testing.T) {
 
 func TestContextMenu_DismissClearsVisible(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(100, 200), testItems)
+	m.cursorPos = image.Pt(100, 200)
+	m.Show(testItems)
 	m.Dismiss()
 	if m.Visible() {
 		t.Error("menu should not be visible after Dismiss")
@@ -75,7 +78,7 @@ func TestContextMenu_DismissClearsVisible(t *testing.T) {
 
 func TestContextMenu_DismissResetsHover(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(0, 0), testItems)
+	m.Show(testItems)
 	m.hoverIdx = 2
 	m.Dismiss()
 	if m.hoverIdx != -1 {
@@ -85,8 +88,10 @@ func TestContextMenu_DismissResetsHover(t *testing.T) {
 
 func TestContextMenu_ShowUpdatesPosition(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(100, 100), testItems[:2])
-	m.Show(image.Pt(200, 200), testItems)
+	m.cursorPos = image.Pt(100, 100)
+	m.Show(testItems[:2])
+	m.cursorPos = image.Pt(200, 200)
+	m.Show(testItems)
 	if m.pos != (image.Point{X: 200, Y: 200}) {
 		t.Errorf("pos = %v, want (200,200)", m.pos)
 	}
@@ -100,7 +105,8 @@ func TestContextMenu_ShowUpdatesPosition(t *testing.T) {
 func TestContextMenu_ShowDismissShowCycle(t *testing.T) {
 	var m ContextMenu
 
-	m.Show(image.Pt(100, 100), testItems)
+	m.cursorPos = image.Pt(100, 100)
+	m.Show(testItems)
 	if !m.Visible() || !m.showFrame {
 		t.Fatal("first Show failed")
 	}
@@ -108,7 +114,8 @@ func TestContextMenu_ShowDismissShowCycle(t *testing.T) {
 	m.showFrame = false // simulate frame processing
 	m.Dismiss()
 
-	m.Show(image.Pt(200, 200), testItems)
+	m.cursorPos = image.Pt(200, 200)
+	m.Show(testItems)
 	if !m.Visible() {
 		t.Error("should be visible after second Show")
 	}
@@ -241,7 +248,7 @@ func TestMenuDimensions(t *testing.T) {
 
 func TestContextMenu_HoverInitialState(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(0, 0), testItems)
+	m.Show(testItems)
 	if m.hoverIdx != -1 {
 		t.Errorf("hoverIdx = %d, want -1 (no hover initially)", m.hoverIdx)
 	}
@@ -249,9 +256,10 @@ func TestContextMenu_HoverInitialState(t *testing.T) {
 
 func TestContextMenu_HoverClearedOnReshow(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(0, 0), testItems)
+	m.Show(testItems)
 	m.hoverIdx = 2
-	m.Show(image.Pt(50, 50), testItems)
+	m.cursorPos = image.Pt(50, 50)
+	m.Show(testItems)
 	if m.hoverIdx != -1 {
 		t.Errorf("hoverIdx = %d, want -1 after re-Show", m.hoverIdx)
 	}
@@ -259,10 +267,29 @@ func TestContextMenu_HoverClearedOnReshow(t *testing.T) {
 
 func TestContextMenu_HoverClearedOnDismiss(t *testing.T) {
 	var m ContextMenu
-	m.Show(image.Pt(0, 0), testItems)
+	m.Show(testItems)
 	m.hoverIdx = 1
 	m.Dismiss()
 	if m.hoverIdx != -1 {
 		t.Errorf("hoverIdx = %d, want -1 after Dismiss", m.hoverIdx)
+	}
+}
+
+// --- Cursor tracking ---
+
+func TestContextMenu_CursorPosUsedByShow(t *testing.T) {
+	var m ContextMenu
+	m.cursorPos = image.Pt(300, 400)
+	m.Show(testItems)
+	if m.pos != (image.Point{X: 300, Y: 400}) {
+		t.Errorf("pos = %v, want (300,400) from cursorPos", m.pos)
+	}
+}
+
+func TestContextMenu_CursorPosZeroDefault(t *testing.T) {
+	var m ContextMenu
+	m.Show(testItems)
+	if m.pos != (image.Point{}) {
+		t.Errorf("pos = %v, want (0,0) when cursorPos not set", m.pos)
 	}
 }

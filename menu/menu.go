@@ -49,6 +49,11 @@ var (
 
 // ContextMenu is a reusable floating context menu with hover highlighting.
 //
+// Cursor tracking is built in: Layout() registers a full-window PassOp event
+// area that continuously tracks the pointer position in absolute window
+// coordinates. Show() opens the menu at the last tracked position, so callers
+// never need to convert between coordinate systems.
+//
 // The dismiss overlay uses pointer.PassOp so events pass through to handlers
 // underneath (e.g. row click handlers). A showFrame flag prevents stale events
 // from dismissing the menu on the same frame Show() was called.
@@ -61,17 +66,22 @@ type ContextMenu struct {
 	pos       image.Point // absolute window position (pixels)
 	items     []Item
 
-	itemTags []*bool // stable pointer event tags, one per item
-	bgTag    bool    // background dismiss tag
+	itemTags  []*bool // stable pointer event tags, one per item
+	bgTag     bool    // background dismiss tag
+	cursorTag bool    // full-window cursor tracking tag
 
-	hoverIdx int // currently hovered item index, -1 = none
+	cursorPos image.Point // last known absolute cursor position
+	hoverIdx  int         // currently hovered item index, -1 = none
 }
 
-// Show opens the context menu at the given window position with the given items.
-func (m *ContextMenu) Show(pos image.Point, items []Item) {
+// Show opens the context menu at the last tracked cursor position with the
+// given items. The cursor position is tracked automatically by Layout() in
+// absolute window coordinates, so callers never need to convert from local
+// coordinate systems.
+func (m *ContextMenu) Show(items []Item) {
 	m.visible = true
 	m.showFrame = true
-	m.pos = pos
+	m.pos = m.cursorPos
 	m.items = items
 	m.hoverIdx = -1
 	m.ensureTags()
@@ -113,7 +123,9 @@ func ClampPosition(pos image.Point, menuW, menuH, winW, winH int) image.Point {
 	return pos
 }
 
-// drainEvents discards any queued pointer events for all menu tags.
+// drainEvents discards any queued pointer events for all menu-item and
+// background-dismiss tags. The cursor tracking tag is NOT drained here
+// because it must always process events to keep cursorPos up to date.
 func (m *ContextMenu) drainEvents(gtx layout.Context) {
 	for {
 		if _, ok := gtx.Event(pointer.Filter{Target: &m.bgTag, Kinds: pointer.Press}); !ok {
@@ -135,7 +147,33 @@ func (m *ContextMenu) drainEvents(gtx layout.Context) {
 // Layout renders the context menu overlay and returns any triggered action.
 // Call this AFTER laying out the main content so the menu renders on top,
 // but row/button handlers underneath still receive events via PassOp.
+//
+// Layout must be called at the top level (not inside nested offsets) so that
+// cursor tracking captures absolute window coordinates.
 func (m *ContextMenu) Layout(gtx layout.Context, th *material.Theme) Result {
+	// Track cursor position in absolute window coordinates. This PassOp area
+	// covers the full window and passes events through so other handlers
+	// (list scroll, row clicks) still work. The tracked position is used by
+	// Show() to open the menu at the correct location.
+	passStack := pointer.PassOp{}.Push(gtx.Ops)
+	cursorArea := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
+	event.Op(gtx.Ops, &m.cursorTag)
+	cursorArea.Pop()
+	passStack.Pop()
+
+	for {
+		ev, ok := gtx.Event(pointer.Filter{
+			Target: &m.cursorTag,
+			Kinds:  pointer.Move | pointer.Enter | pointer.Press | pointer.Drag,
+		})
+		if !ok {
+			break
+		}
+		if e, ok := ev.(pointer.Event); ok {
+			m.cursorPos = image.Pt(int(e.Position.X), int(e.Position.Y))
+		}
+	}
+
 	if !m.visible {
 		m.drainEvents(gtx)
 		return Result{}
@@ -163,11 +201,11 @@ func (m *ContextMenu) Layout(gtx layout.Context, th *material.Theme) Result {
 
 	// Background dismiss area: full window, with pass-through so
 	// handlers underneath still receive pointer events.
-	passStack := pointer.PassOp{}.Push(gtx.Ops)
+	bgPass := pointer.PassOp{}.Push(gtx.Ops)
 	bgArea := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 	event.Op(gtx.Ops, &m.bgTag)
 	bgArea.Pop()
-	passStack.Pop()
+	bgPass.Pop()
 
 	// Check for dismiss click (press outside menu bounds)
 	for {
