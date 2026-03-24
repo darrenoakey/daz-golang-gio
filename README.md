@@ -2,41 +2,47 @@
 
 # daz-golang-gio
 
-Welcome! This is a Go library that makes it easier to build beautiful, cross-platform desktop applications using the [Gio](https://gioui.org) UI toolkit. Whether you're new to GUI programming in Go or just looking for a smoother experience, this library is here to help you get up and running quickly.
+So you want to build a real desktop app in Go — one with windows, buttons, text, and all the things people expect from native software. You've come to the right place.
 
-## What Is It?
+This library makes it easier to get started with [Gio](https://gioui.org), a fantastic framework for building beautiful, cross-platform desktop applications in Go. Think of this library as a friendly layer on top of Gio that handles some of the repetitive setup so you can focus on your actual app, not the boilerplate.
 
-Gio is a powerful framework for building native graphical apps in Go — apps with real windows, buttons, text, and all the things users expect from desktop software. This library sits on top of Gio and gives you a friendlier, more approachable way to work with it.
+The result? You spend less time wrestling with setup and more time building something you're proud of. Apps you create with this library run on **Linux, macOS, and Windows** — no extra configuration needed.
 
-Think of it as a helpful companion that takes care of some of the repetitive setup so you can focus on building your actual app.
+---
 
-## Getting Started
+## What You'll Need
 
-### Prerequisites
-
-Make sure you have Go installed (version 1.23 or newer). You can check by running:
+Before anything else, make sure you have **Go 1.23 or newer** installed. Not sure which version you have? Run this in your terminal:
 
 ```bash
 go version
 ```
 
-### Add It to Your Project
+If you need to install or update Go, head over to [go.dev](https://go.dev/dl/) and grab the latest version.
 
-In your Go project, run:
+---
+
+## Getting Started
+
+### Add the Library to Your Project
+
+Inside your Go project folder, run:
 
 ```bash
 go get github.com/darrenoakey/daz-golang-gio
 ```
 
-Then import it in your Go code:
+Then import it in your code:
 
 ```go
 import "github.com/darrenoakey/daz-golang-gio"
 ```
 
-### Try the Example
+That's it — you're ready to start building!
 
-The fastest way to see it in action is to clone the repository and run the built-in example:
+### See It in Action First
+
+The quickest way to understand what this library can do is to run the built-in example app. Clone the repository and try it out:
 
 ```bash
 git clone https://github.com/darrenoakey/daz-golang-gio
@@ -44,44 +50,89 @@ cd daz-golang-gio
 ./run example
 ```
 
-A window should appear on your screen — that's your first Gio app running!
+A window will appear on your screen. That's a complete, working Gio application — and it's a great starting point for your own project.
 
-## Working with the Project
+---
 
-If you're contributing to or exploring the library itself, the `run` script is your main helper. Here's what each command does:
+## A Guide to Everything You Can Do
 
-| Command | What it does |
-|---|---|
-| `./run build` | Compiles the library to check everything is in order |
-| `./run test` | Runs all the tests |
-| `./run lint` | Checks code formatting and quality |
-| `./run check` | Runs build, lint, and tests all together — the full quality check |
-| `./run example` | Launches the example application |
-| `./run deploy` | Publishes a new release (for maintainers) |
+All the common tasks in this project are handled by a single helper script called `run`. Here's a friendly walkthrough of everything it can do.
 
-### Running a Specific Test
+### Building
 
-You can run tests for a specific package by passing a path:
+```bash
+./run build
+```
+
+This compiles the library to make sure everything is in good shape. Think of it as a quick sanity check — if it builds without errors, you're on solid ground.
+
+### Running Tests
+
+```bash
+./run test
+```
+
+Runs the full test suite and shows you the results. If you want to test just one specific part of the project, you can pass a path:
 
 ```bash
 ./run test ./yourpackage/...
 ```
 
-## Tips & Tricks
+Test output is also saved automatically to `output/testing/last.log`, so you can look back at it any time.
 
-- **Start with the example.** The `./example/` folder is the best place to understand how to structure your own app. Copy it as a starting point!
+### Checking Code Quality
 
-- **Run `./run check` before committing.** It catches formatting issues, build errors, and failing tests all in one go — saves you from surprises later.
+```bash
+./run lint
+```
 
-- **Gio is immediate mode.** If you're used to other UI frameworks, Gio works a little differently — the UI is redrawn each frame rather than being built once. Once it clicks, it's very satisfying to work with.
+This checks that your code is correctly formatted and follows Go best practices. It uses `gofmt` and `go vet` under the hood, and will also run `golangci-lint` if you have it installed.
 
-- **Cross-platform by default.** Apps built with this library run on Linux, macOS, and Windows without any extra configuration.
+### The Full Quality Check
 
-- **Keep your dependencies tidy.** Run `go mod tidy` occasionally to make sure your `go.mod` and `go.sum` files stay clean.
+```bash
+./run check
+```
+
+This is your one-stop confidence booster — it runs the build, the linter, and all the tests in sequence. If everything passes, you're good to go. This is the command to run before committing or sharing your work.
+
+### Running the Example App
+
+```bash
+./run example
+```
+
+Launches the included example application. It's a great reference whenever you want to see how something is done.
+
+### Deploying a New Release
+
+```bash
+./run deploy
+```
+
+For project maintainers, this command handles the full release process: runs quality checks, bumps the version number, publishes to GitHub, creates a version tag, and notifies the Go module proxy so the new version is available to everyone.
+
+---
+
+## Tips and Tricks
+
+**Start with the example.** Seriously — the `./example/` folder is the best teacher. Copy it as a starting point for your own app and modify from there. It shows you the right structure from day one.
+
+**Run `./run check` before you commit.** It catches formatting issues, build errors, and test failures all in one go. Making this a habit will save you from surprises later.
+
+**Gio works differently from most UI frameworks.** Instead of building a UI once and updating it, Gio redraws the interface every frame. This is called *immediate mode* rendering. It might feel unusual at first, but once it clicks, it's a wonderfully direct and satisfying way to work.
+
+**Don't worry about platform differences.** Your app will run on Linux, macOS, and Windows without any extra work. Just build and ship.
+
+**Keep your dependencies tidy.** Every now and then, run `go mod tidy` in your project to keep your `go.mod` and `go.sum` files clean and up to date.
+
+**Save test output for later.** The test command automatically saves a full log to `output/testing/last.log`. If a test fails and you want to look at it more carefully, it's right there waiting for you.
+
+---
 
 ## Learn More
 
-- [Gio documentation](https://gioui.org) — the upstream framework this library builds on
-- [pkg.go.dev](https://pkg.go.dev/github.com/darrenoakey/daz-golang-gio) — API reference for this library
+- [Gio documentation](https://gioui.org) — the upstream framework this library is built on. Great for going deeper.
+- [pkg.go.dev reference](https://pkg.go.dev/github.com/darrenoakey/daz-golang-gio) — the full API reference for this library.
 
 Happy building! 🎉
