@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 	"os"
 
@@ -15,12 +16,10 @@ import (
 )
 
 func main() {
-	// One line: window position and size are persisted automatically.
 	w := persist.NewWindow("example",
 		app.Title("Persist Example"),
 		app.MinSize(unit.Dp(400), unit.Dp(300)),
 	)
-	defer w.Close()
 
 	th := material.NewTheme()
 
@@ -30,14 +29,18 @@ func main() {
 			switch e := w.Event().(type) {
 			case app.FrameEvent:
 				gtx := app.NewContext(&ops, e)
+				frame := w.Frame()
 				layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					label := material.H4(th, "Resize or move this window — it remembers!")
-					label.Color = color.NRGBA{R: 80, G: 80, B: 80, A: 255}
+					info := fmt.Sprintf("Persist Example\n\nPosition: (%.0f, %.0f)\nSize: %.0f x %.0f\n\nMove or resize me — I remember!",
+						frame.X, frame.Y, frame.Width, frame.Height)
+					label := material.H6(th, info)
+					label.Color = color.NRGBA{R: 30, G: 30, B: 30, A: 255}
 					label.Alignment = text.Middle
 					return label.Layout(gtx)
 				})
 				e.Frame(gtx.Ops)
 			case app.DestroyEvent:
+				w.Close()
 				os.Exit(0)
 			}
 		}

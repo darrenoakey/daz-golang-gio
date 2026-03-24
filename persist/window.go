@@ -9,21 +9,18 @@ import (
 	"gioui.org/unit"
 )
 
-const saveInterval = 30 * time.Second
-const saveDebounceDuration = 500 * time.Millisecond
-
 // Window wraps app.Window with automatic position and size persistence.
 // Replace new(app.Window) with persist.NewWindow("appname") for one-line persistence.
 type Window struct {
 	*app.Window
-	name         string
-	state        State
-	view         uintptr
-	dirty        bool
-	mu           sync.Mutex
-	debounce     *time.Timer
-	periodicDone chan struct{}
-	restored     bool
+	name  string
+	saved State
+
+	mu       sync.Mutex
+	view     uintptr
+	last     State
+	restored bool
+	done     chan struct{}
 }
 
 // NewWindow creates a Gio window that automatically persists its position and size.
@@ -32,147 +29,146 @@ type Window struct {
 func NewWindow(name string, opts ...app.Option) *Window {
 	saved, err := LoadState(name)
 	if err != nil {
-		log.Printf("persist: failed to load state for %q: %v", name, err)
+		log.Printf("persist: load state %q: %v", name, err)
 	}
-
-	var applyOpts []app.Option
-	if saved.Width > 0 && saved.Height > 0 && saved.Mode != "Maximized" {
-		applyOpts = append(applyOpts, app.Size(unit.Dp(saved.Width), unit.Dp(saved.Height)))
-	}
-	applyOpts = append(applyOpts, opts...)
 
 	w := &Window{
-		Window:       new(app.Window),
-		name:         name,
-		state:        saved,
-		periodicDone: make(chan struct{}),
+		Window: new(app.Window),
+		name:   name,
+		saved:  saved,
+		done:   make(chan struct{}),
 	}
-	w.Window.Option(applyOpts...)
 
-	go w.periodicSave()
+	// Apply default size; position is restored later via native API.
+	allOpts := []app.Option{app.Size(unit.Dp(800), unit.Dp(600))}
+	allOpts = append(allOpts, opts...)
+	w.Window.Option(allOpts...)
+
+	go w.tracker()
 
 	return w
 }
 
-// Event returns the next window event, intercepting config and destroy events
-// to track window geometry. Use this in your event loop instead of w.Window.Event().
+// Event returns the next window event, intercepting platform events
+// to capture the native view handle. Use this instead of w.Window.Event().
 func (w *Window) Event() any {
 	e := w.Window.Event()
 	w.handleEvent(e)
 	return e
 }
 
-// Close flushes any pending state to disk and stops the periodic saver.
-// Call this when the window is destroyed (e.g., defer w.Close()).
+// Close stops the background tracker and does a final save.
+// Call this when the window is destroyed.
 func (w *Window) Close() {
-	close(w.periodicDone)
-	w.mu.Lock()
-	if w.debounce != nil {
-		w.debounce.Stop()
+	select {
+	case <-w.done:
+	default:
+		close(w.done)
 	}
-	w.mu.Unlock()
-	w.flushState()
+}
+
+// Frame returns the last known window frame. Safe to call from the event loop.
+func (w *Window) Frame() State {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.last
 }
 
 func (w *Window) handleEvent(e any) {
-	switch e := e.(type) {
-	case app.ConfigEvent:
-		w.mu.Lock()
-		cfg := e.Config
-		if cfg.Size.X > 0 && cfg.Size.Y > 0 {
-			w.state.Width = cfg.Size.X
-			w.state.Height = cfg.Size.Y
-		}
-		w.state.Mode = cfg.Mode.String()
-		w.dirty = true
-		w.scheduleSave()
-		w.mu.Unlock()
-
+	switch e.(type) {
 	case app.DestroyEvent:
-		w.capturePosition()
-		w.flushState()
-
+		w.Close()
 	default:
 		w.handlePlatformEvent(e)
 	}
 }
 
-func (w *Window) capturePosition() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.view == 0 || !PositionSupported() {
-		return
-	}
-	x, y, width, height := GetWindowPosition(w.view)
-	if width > 0 && height > 0 {
-		w.state.X = x
-		w.state.Y = y
-		w.state.Width = width
-		w.state.Height = height
-		w.dirty = true
-	}
-}
-
-func (w *Window) scheduleSave() {
-	if w.debounce != nil {
-		w.debounce.Stop()
-	}
-	w.debounce = time.AfterFunc(saveDebounceDuration, func() {
-		w.capturePosition()
-		w.flushState()
-	})
-}
-
-func (w *Window) flushState() {
-	w.mu.Lock()
-	state := w.state
-	dirty := w.dirty
-	w.dirty = false
-	w.mu.Unlock()
-
-	if !dirty {
-		return
-	}
-	if err := SaveState(w.name, state); err != nil {
-		log.Printf("persist: failed to save state for %q: %v", w.name, err)
-	}
-}
-
-func (w *Window) periodicSave() {
-	ticker := time.NewTicker(saveInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			w.capturePosition()
-			w.flushState()
-		case <-w.periodicDone:
-			return
-		}
-	}
-}
-
-// SetView stores the native view handle for position tracking.
-// Called by platform-specific event handlers.
-func (w *Window) SetView(view uintptr) {
+func (w *Window) setView(view uintptr) {
 	w.mu.Lock()
 	w.view = view
 	w.mu.Unlock()
 }
 
-// RestorePosition applies saved position if not already restored.
-// Called by platform-specific event handlers when the native view is available.
-func (w *Window) RestorePosition(view uintptr) {
-	w.mu.Lock()
-	if w.restored {
-		w.mu.Unlock()
+// tracker runs in a background goroutine, polling the native window frame
+// and saving changes. All CGo and file I/O happens here, never in the event handler.
+func (w *Window) tracker() {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastSaved State
+
+	for {
+		select {
+		case <-w.done:
+			w.finalSave()
+			return
+		case <-ticker.C:
+			w.mu.Lock()
+			view := w.view
+			restored := w.restored
+			w.mu.Unlock()
+
+			if view == 0 {
+				continue
+			}
+
+			// Restore saved position once.
+			if !restored {
+				w.restorePosition(view)
+				w.mu.Lock()
+				w.restored = true
+				w.mu.Unlock()
+			}
+
+			// Read current frame.
+			x, y, width, height := GetWindowFrame(view)
+			current := State{X: x, Y: y, Width: width, Height: height}
+
+			w.mu.Lock()
+			w.last = current
+			w.mu.Unlock()
+
+			// Save if changed.
+			if current.Valid() && !current.Equal(lastSaved) {
+				lastSaved = current
+				if err := SaveState(w.name, current); err != nil {
+					log.Printf("persist: save %q: %v", w.name, err)
+				}
+			}
+
+			w.Window.Invalidate()
+		}
+	}
+}
+
+func (w *Window) restorePosition(view uintptr) {
+	if !w.saved.Valid() {
 		return
 	}
-	w.restored = true
-	state := w.state
-	w.mu.Unlock()
+	if !PositionSupported() {
+		return
+	}
+	if IsOnScreen(w.saved.X, w.saved.Y) {
+		log.Printf("persist: restoring %q to (%.0f, %.0f) %.0fx%.0f",
+			w.name, w.saved.X, w.saved.Y, w.saved.Width, w.saved.Height)
+		SetWindowFrame(view, w.saved.X, w.saved.Y, w.saved.Width, w.saved.Height)
+	} else {
+		log.Printf("persist: saved position (%.0f, %.0f) is off-screen, skipping", w.saved.X, w.saved.Y)
+	}
+}
 
-	if state.X != 0 || state.Y != 0 {
-		SetWindowPosition(view, state.X, state.Y, state.Width, state.Height)
+func (w *Window) finalSave() {
+	w.mu.Lock()
+	view := w.view
+	w.mu.Unlock()
+	if view == 0 || !PositionSupported() {
+		return
+	}
+	x, y, width, height := GetWindowFrame(view)
+	current := State{X: x, Y: y, Width: width, Height: height}
+	if current.Valid() {
+		if err := SaveState(w.name, current); err != nil {
+			log.Printf("persist: final save %q: %v", w.name, err)
+		}
 	}
 }
