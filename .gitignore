@@ -6,3 +6,4 @@ local/
 .DS_Store
 go.work
 go.work.sum
+.publish_config

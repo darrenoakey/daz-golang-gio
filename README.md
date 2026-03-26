@@ -50,7 +50,7 @@ cd daz-golang-gio
 ./run example
 ```
 
-A window will appear on your screen. That's a complete, working Gio application — and it's a great starting point for your own project.
+A window will appear on your screen. That's a complete, working desktop application — and it's a great starting point for your own project.
 
 ---
 
@@ -139,4 +139,4 @@ Happy building! 🎉
 
 ## License
 
-This project is licensed under [CC BY-NC 4.0](https://darren-static.waft.dev) - free to use and modify, but no commercial use without permission.
+This project is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — free to use and modify, but no commercial use without permission.
