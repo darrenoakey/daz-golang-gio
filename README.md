@@ -136,3 +136,7 @@ For project maintainers, this command handles the full release process: runs qua
 - [pkg.go.dev reference](https://pkg.go.dev/github.com/darrenoakey/daz-golang-gio) — the full API reference for this library.
 
 Happy building! 🎉
+
+## License
+
+This project is licensed under [CC BY-NC 4.0](https://darren-static.waft.dev) - free to use and modify, but no commercial use without permission.
