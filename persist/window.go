@@ -42,7 +42,7 @@ func NewWindow(name string, opts ...app.Option) *Window {
 	// Apply default size; position is restored later via native API.
 	allOpts := []app.Option{app.Size(unit.Dp(800), unit.Dp(600))}
 	allOpts = append(allOpts, opts...)
-	w.Window.Option(allOpts...)
+	w.Option(allOpts...)
 
 	go w.tracker()
 
@@ -91,6 +91,15 @@ func (w *Window) setView(view uintptr) {
 
 // tracker runs in a background goroutine, polling the native window frame
 // and saving changes. All CGo and file I/O happens here, never in the event handler.
+//
+// It intentionally does NOT invalidate the Gio window on every tick. Gio
+// redraws on macOS are driven directly by Invalidate (there is no
+// CVDisplayLink to pace them — see gioui.org/app's os_macos.go), so an
+// unconditional Invalidate here would force a full GPU redraw 10x/sec for
+// the entire process lifetime, regardless of whether the window ever moved.
+// Left running for hours that leaks Metal-backed drawable memory (observed
+// growing to tens of GB in activity and agentd-gauge, both of which embed
+// this package). Only invalidate when the polled frame actually changed.
 func (w *Window) tracker() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -128,17 +137,25 @@ func (w *Window) tracker() {
 			w.last = current
 			w.mu.Unlock()
 
-			// Save if changed.
-			if current.Valid() && !current.Equal(lastSaved) {
+			// Save and redraw only if the frame actually changed (e.g. the
+			// user dragged or resized the window). Idle ticks must never
+			// invalidate — see the tracker doc comment above.
+			if shouldRedraw(current, lastSaved) {
 				lastSaved = current
 				if err := SaveState(w.name, current); err != nil {
 					log.Printf("persist: save %q: %v", w.name, err)
 				}
+				w.Invalidate()
 			}
-
-			w.Window.Invalidate()
 		}
 	}
+}
+
+// shouldRedraw reports whether a newly polled window frame differs from the
+// last-saved frame and therefore warrants a save + Invalidate. Idle ticks
+// (nothing moved, or the frame is not yet valid) must return false.
+func shouldRedraw(current, lastSaved State) bool {
+	return current.Valid() && !current.Equal(lastSaved)
 }
 
 func (w *Window) restorePosition(view uintptr) {
